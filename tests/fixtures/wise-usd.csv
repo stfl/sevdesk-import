@@ -1,0 +1,9 @@
+ID,Status,Direction,"Created on","Finished on","Source fee amount","Source fee currency","Target fee amount","Target fee currency","Source name","Source amount (after fees)","Source currency","Target name","Target amount (after fees)","Target currency","Exchange rate",Reference,Batch,"Created by",Category,Note
+"CARD_TRANSACTION-9000000001",COMPLETED,OUT,"2026-05-20 22:30:00","2026-05-20 22:30:00",0.12,USD,,,"Test Holder",32.00,USD,"Example SaaS Ltd",28.00,EUR,0.8750000000000000,,,"Test Holder",Shopping,
+"CARD_TRANSACTION-9000000001",COMPLETED,OUT,"2026-05-20 22:30:00","2026-05-20 22:30:00",0.00,EUR,,,"Test Holder",4.50,EUR,"Example SaaS Ltd",4.50,EUR,1.0000000000000000,,,"Test Holder",Shopping,
+TRANSFER-9000000003,COMPLETED,IN,"2026-05-11 20:20:26","2026-05-11 20:20:39",15.50,USD,,,"Acme Client Inc",3450.0,USD,"Test Holder",3450.0,USD,1.0,SampleACH,,"Test Holder","Money added",
+"CARD_TRANSACTION-9000000004",COMPLETED,OUT,"2026-05-29 09:42:21","2026-05-29 09:42:21",0.00,USD,,,"Test Holder",750.00,USD,"Neobank Top-up",750.00,USD,1.0000000000000000,,,"Test Holder",Uncategorised,
+"BALANCE_CASHBACK-9000000005",COMPLETED,IN,"2026-05-31 06:35:18","2026-05-31 06:35:18",,,,,TransferWise,0.40,USD,,0.40,USD,1,"BALANCE CASHBACK",,,Rewards,
+ACCRUAL_CHARGE-9000000006,COMPLETED,OUT,"2026-06-01 17:59:03","2026-06-01 17:59:03",,,,,,0.30,USD,TransferWise,0.30,USD,1.00000000,"Assets fee 9000000006",,,Bills,
+TRANSFER-9000000007,CANCELLED,OUT,"2026-06-03 08:15:00",,0.00,USD,,,"Test Holder",500.00,USD,"Reverted Recipient",500.00,USD,1.0,,,"Test Holder",Uncategorised,
+TRANSFER-9000000008,COMPLETED,IN,"2026-06-11 10:00:00","2026-06-11 10:00:00",0.00,EUR,,,"Euro Payer GmbH",100.00,EUR,"Test Holder",115.00,USD,1.15,,,"Test Holder","Money added",

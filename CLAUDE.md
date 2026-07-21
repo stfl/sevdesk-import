@@ -71,8 +71,12 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Current State
 
-The specification is `bd show sevdesk-importer-5op`. There is no implementation yet — the
-repository holds the spec, this file, and ignored source statements.
+The specification is `bd show sevdesk-importer-5op`.
+
+`sevdesk_importer/` holds the converter. Reading an export is `providers.py`, which turns
+both schemas into one `Movement` record; pricing is `conversion.py`, which splits fees into
+their own rows; `rates.py` owns the ECB series and the resolution order. `cli.py` wires them
+together and chooses the exit code.
 
 ## Stack
 
