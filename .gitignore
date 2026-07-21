@@ -26,9 +26,6 @@ report.json
 # The one re-admit, last so it wins over every deny above.
 !tests/fixtures/**/*.csv
 
-# Issue tracker: local Dolt database, deliberately not shared.
-.beads/
-
 # Rate cache (XDG by default; this covers an in-repo override).
 .cache/
 
@@ -50,9 +47,3 @@ result-*
 
 # OMC session state (local, regenerated per session)
 .omc/
-
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key
-.beads/proxieddb/
