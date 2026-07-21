@@ -121,7 +121,7 @@ Each of these produces plausible-looking wrong numbers rather than an error.
   wants `ROUND_HALF_UP`, set explicitly, or every exact half under-rounds systematically.
 - **The Wise transaction identifier is not unique.** One card payment appears twice under a
   single ID, split across two source currencies. Never treat it as a key.
-- **German numbers collide with a comma delimiter** — `9.841,67` forces quoting. The field
+- **German numbers collide with a comma delimiter** — `9.876,54` forces quoting. The field
   delimiter follows the number format: `;` for German, `,` for US.
 - **A Revolut row can have an empty `Completed Date` and empty `Balance`** when unsettled,
   and can carry `Amount=0.00` with a nonzero `Fee`. Neither may crash or emit a zero row.
