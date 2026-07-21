@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# Real account data must never be committed. This repository is public.
+#
+# Deny-by-default: every CSV is ignored wherever it lands, so dropping a fresh
+# bank export anywhere in the tree cannot stage it by accident. Synthetic test
+# fixtures are re-admitted explicitly, one directory only.
+# ---------------------------------------------------------------------------
+*.csv
+!tests/fixtures/**/*.csv
+
+# Statement exports, named defensively in case the rules above are ever relaxed.
+revolut-*.csv
+wise-*.csv
+*-statement*.csv
+*konto*.csv
+*umsatz*.csv
+
+# Generated output — sevDesk-ready CSVs derived from real statements.
+out/
+*.sevdesk.csv
+report.json
+
+# Issue tracker: local Dolt database, deliberately not shared.
+.beads/
+
+# Rate cache (XDG by default; this covers an in-repo override).
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Nix / direnv
+result
+result-*
+.direnv/
+
+# OMC session state (local, regenerated per session)
+.omc/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
