@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sevdesk-importer"
+version = "1.0.0"
+description = "Convert Wise and Revolut USD statements into sevDesk-importable EUR CSV"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+sevdesk-importer = "sevdesk_importer.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sevdesk_importer*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.mypy]
+strict = true
+files = ["sevdesk_importer", "tests"]
+
+[tool.ruff]
+# Wide enough that a domain sentence in a docstring or an assertion message stays
+# on one line; narrow enough to read two files side by side.
+line-length = 100

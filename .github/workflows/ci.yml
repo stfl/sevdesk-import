@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+# Superseded runs on the same ref are pointless once a newer commit exists.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v5 # zizmor: ignore[unpinned-uses]
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@v31 # zizmor: ignore[unpinned-uses]
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # Build the dev shell once so the steps below only run their own command.
+      - name: Build dev shell
+        run: nix develop --command python3 --version
+
+      - name: Unit tests
+        run: nix develop --command pytest -q
+
+      - name: Types
+        run: nix develop --command mypy
+
+      - name: Format
+        run: nix develop --command ruff format --check .
+
+      - name: Package builds
+        run: nix build .#sevdesk-importer && nix run . -- --version

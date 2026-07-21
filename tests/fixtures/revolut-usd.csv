@@ -1,0 +1,8 @@
+Type,Product,Started Date,Completed Date,Description,Amount,Fee,Currency,State,Balance
+Topup,Pro,2026-06-01 11:42:20,2026-06-01 11:42:22,Google Pay top-up by *1234,800.00,0.00,USD,COMPLETED,800.00
+MERCHANT_PAYMENT,Pro,2026-05-21 10:30:11,2026-05-28 10:30:31,Merchant payment,9.00,0.45,USD,COMPLETED,8.55
+Exchange,Pro,2026-06-11 11:55:29,2026-06-11 11:55:29,Exchanged to EUR,-796.80,0.00,USD,COMPLETED,0.00
+Topup,Pro,2026-06-14 09:00:00,,Google Pay top-up by *1234,300.00,0.00,USD,PENDING,
+Exchange,Pro,2026-05-28 10:30:32,2026-05-28 10:30:32,Exchanged to EUR,-2.00,0.00,USD,COMPLETED,6.55
+Transfer,Pro,2026-05-31 14:12:05,2026-05-31 14:12:05,To USD Savings Pocket,-6.55,0.00,USD,COMPLETED,0.00
+Topup,Pro,2026-06-05 08:00:00,2026-06-05 08:00:02,Card delivery fee,0.00,3.20,USD,COMPLETED,796.80
