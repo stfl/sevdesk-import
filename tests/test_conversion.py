@@ -48,29 +48,25 @@ class TestPricing:
     ) -> None:
         """796.80 USD on 2026-06-11, quoted 1.1537 USD per EUR, is 690.65 EUR."""
         booking = booking_by(revolut, "2026-06-11 11:55:29")
-        assert booking.belastung == Decimal("690.65")
+        assert booking.amount_eur == Decimal("-690.65")
 
     def test_a_row_with_a_recorded_rate_uses_it(self, wise: Conversion) -> None:
         """32.00 USD at the rate Wise itself charged, 0.875, is 28.00 EUR."""
         booking = booking_by(wise, "9000000001")
-        assert booking.belastung == Decimal("28.00")
+        assert booking.amount_eur == Decimal("-28.00")
         assert booking.rate.provenance == "export"
 
     def test_an_inverted_recorded_rate_prices_an_incoming_conversion(
         self, wise: Conversion
     ) -> None:
         """115.00 USD credited against 100.00 EUR sent."""
-        assert booking_by(wise, "9000000008").gutschrift == Decimal("100.00")
+        assert booking_by(wise, "9000000008").amount_eur == Decimal("100.00")
 
-    def test_a_credit_populates_gutschrift_only(self, wise: Conversion) -> None:
-        booking = booking_by(wise, "9000000003")
-        assert booking.gutschrift is not None
-        assert booking.belastung is None
+    def test_money_arriving_is_signed_positive(self, wise: Conversion) -> None:
+        assert booking_by(wise, "9000000003").amount_eur > 0
 
-    def test_a_debit_populates_belastung_only(self, wise: Conversion) -> None:
-        booking = booking_by(wise, "9000000004")
-        assert booking.belastung is not None
-        assert booking.gutschrift is None
+    def test_money_leaving_is_signed_negative(self, wise: Conversion) -> None:
+        assert booking_by(wise, "9000000004").amount_eur < 0
 
     def test_amounts_are_rounded_to_cents(self, revolut: Conversion) -> None:
         assert all(b.amount_eur == b.amount_eur.quantize(Decimal("0.01")) for b in revolut.bookings)
@@ -78,12 +74,12 @@ class TestPricing:
 
 class TestFeeRows:
     def test_a_fee_becomes_its_own_row(self, wise: Conversion) -> None:
-        assert booking_by(wise, "9000000003", fee=True).belastung is not None
+        assert booking_by(wise, "9000000003", fee=True).amount_eur != 0
 
     def test_a_fee_row_is_always_a_debit_in_both_directions(self, wise: Conversion) -> None:
         """The fee on an incoming transfer offsets the credit; on an outgoing one it adds."""
-        assert booking_by(wise, "9000000003", fee=True).gutschrift is None
-        assert booking_by(wise, "9000000001", fee=True).gutschrift is None
+        assert booking_by(wise, "9000000003", fee=True).amount_eur < 0
+        assert booking_by(wise, "9000000001", fee=True).amount_eur < 0
 
     def test_a_fee_row_carries_the_same_buchungstag_as_its_parent(self, wise: Conversion) -> None:
         parent = booking_by(wise, "9000000003")
@@ -147,7 +143,7 @@ class TestReconciliation:
         """Across the whole statement, emitted rows sum to what the balance did."""
         statement = parse_statement(revolut_statement.read_text())
         assert sum(b.amount_usd for b in revolut.bookings) == sum(
-            m.balance_movement_usd for m in statement.movements
+            m.amount_usd - m.fee_usd for m in statement.movements
         )
 
 

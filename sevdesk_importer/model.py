@@ -33,11 +33,6 @@ class Movement:
     recorded_rate: Decimal | None
     order: int
 
-    @property
-    def balance_movement_usd(self) -> Decimal:
-        """What the provider's own balance column moved by."""
-        return self.amount_usd - self.fee_usd
-
 
 @dataclass(frozen=True)
 class Drop:
@@ -74,11 +69,3 @@ class Booking:
     rate: Rate
     source_ref: str
     is_fee: bool
-
-    @property
-    def gutschrift(self) -> Decimal | None:
-        return self.amount_eur if self.amount_eur > 0 else None
-
-    @property
-    def belastung(self) -> Decimal | None:
-        return -self.amount_eur if self.amount_eur < 0 else None
