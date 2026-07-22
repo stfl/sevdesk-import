@@ -43,7 +43,19 @@ tells you so immediately and names the columns it actually found.
 nix run github:stfl/sevdesk-import -- revolut-usd.csv -o revolut.sevdesk.csv
 ```
 
-Working in a clone instead? `nix run . -- …` does the same thing.
+### From a clone
+
+`nix run . -- …` does the same thing from inside a checkout. If you have [direnv][] the
+directory sets itself up on entry, and there is a shorter form:
+
+```bash
+just run wise-usd.csv wise.sevdesk.csv --since 2026-05-01
+```
+
+`just` on its own lists every recipe. Without direnv, put one command in front:
+`nix develop --command just run …`.
+
+[direnv]: https://direnv.net
 
 It prints a short summary to stderr:
 
@@ -215,14 +227,20 @@ diffing is a valid way to check nothing changed.
 ## Development
 
 ```bash
-nix develop --command pytest              # tests, offline
-nix develop --command mypy                # types
-nix develop --command ruff format .       # formatting
+just            # list every recipe
+just check      # tests, types and the format check — what CI runs
+just test       # unit tests, offline; extra arguments pass through
+just types      # mypy, strict
+just fmt        # reformat in place
+just build      # build the package and run its entry point
 ```
 
+Recipes expect their tools on `PATH`, so run them inside the dev shell — direnv, or
+`nix develop --command just check`.
+
 Entering the dev shell installs a pre-commit hook that runs `ruff format`; a commit whose files
-it reformats is rejected, so re-stage and commit again. CI runs the same three checks plus a
-package build on pushes to `main` and on every pull request.
+it reformats is rejected, so re-stage and commit again. CI invokes the same recipes on pushes
+to `main` and on every pull request, so what passes locally is what passes there.
 
 Python 3, standard library only — the reason `nix run` starts in seconds on a cold machine.
 Tests never touch the network: the ECB call is patched at the HTTP boundary against a captured

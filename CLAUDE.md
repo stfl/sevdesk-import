@@ -47,11 +47,14 @@ compelling reason: a zero-dependency closure is why `nix run` starts in seconds 
 machine instead of building anything. Packaged as a flake.
 
 ```bash
-nix run . -- wise-usd.csv -o out.csv       # run
-nix develop --command pytest               # tests, offline
-nix develop --command mypy                 # types, strict
-nix develop --command ruff format .        # formatting, also a pre-commit hook
+just run wise-usd.csv out.csv    # convert a statement
+just check                       # tests, types, format check — what CI runs
+just                             # list every recipe
 ```
+
+Recipes assume their tools are on `PATH`. Inside the dev shell they just work; from a bare
+shell, prefix one command: `nix develop --command just check`. Never make a recipe or script
+invoke `nix develop` itself — the environment is the caller's responsibility.
 
 ## Domain Rules
 
