@@ -36,9 +36,9 @@ def revolut(revolut_statement: Path, series: EcbSeries) -> Conversion:
     return convert(statement.movements, series, GERMAN)
 
 
-def booking_by(conversion: Conversion, fragment: str, *, fee: bool = False) -> Booking:
-    matches = [b for b in conversion.bookings if fragment in b.source_ref and b.is_fee == fee]
-    assert len(matches) == 1, f"expected one {'fee' if fee else 'main'} booking for {fragment!r}"
+def booking_by(conversion: Conversion, fragment: str) -> Booking:
+    matches = [b for b in conversion.bookings if fragment in b.source_ref]
+    assert len(matches) == 1, f"expected exactly one booking for {fragment!r}"
     return matches[0]
 
 
@@ -51,9 +51,9 @@ class TestPricing:
         assert booking.amount_eur == Decimal("-690.65")
 
     def test_a_row_with_a_recorded_rate_uses_it(self, wise: Conversion) -> None:
-        """32.00 USD at the rate Wise itself charged, 0.875, is 28.00 EUR."""
+        """32.12 USD at the rate Wise itself charged, 0.875, is 28.11 EUR."""
         booking = booking_by(wise, "9000000001")
-        assert booking.amount_eur == Decimal("-28.00")
+        assert booking.amount_eur == Decimal("-28.11")
         assert booking.rate.provenance == "export"
 
     def test_an_inverted_recorded_rate_prices_an_incoming_conversion(
@@ -72,55 +72,57 @@ class TestPricing:
         assert all(b.amount_eur == b.amount_eur.quantize(Decimal("0.01")) for b in revolut.bookings)
 
 
-class TestFeeRows:
-    def test_a_fee_becomes_its_own_row(self, wise: Conversion) -> None:
-        assert booking_by(wise, "9000000003", fee=True).amount_eur != 0
+class TestFees:
+    """A fee rides inside the booking it belongs to, as the bank statement shows it."""
 
-    def test_a_fee_row_is_always_a_debit_in_both_directions(self, wise: Conversion) -> None:
-        """The fee on an incoming transfer offsets the credit; on an outgoing one it adds."""
-        assert booking_by(wise, "9000000003", fee=True).amount_eur < 0
-        assert booking_by(wise, "9000000001", fee=True).amount_eur < 0
+    def test_a_fee_is_folded_into_the_amount_rather_than_split_out(self, wise: Conversion) -> None:
+        """32.00 reached the merchant and 0.12 was charged; 32.12 left the account."""
+        booking = booking_by(wise, "9000000001")
+        assert booking.amount_usd == Decimal("-32.12")
+        assert booking.fee_usd == Decimal("0.12")
 
-    def test_a_fee_row_carries_the_same_buchungstag_as_its_parent(self, wise: Conversion) -> None:
-        parent = booking_by(wise, "9000000003")
-        assert booking_by(wise, "9000000003", fee=True).booking_date == parent.booking_date
+    def test_a_fee_on_an_incoming_transfer_reduces_what_arrived(self, wise: Conversion) -> None:
+        """3465.50 was sent, 15.50 was taken, 3450.00 landed."""
+        booking = booking_by(wise, "9000000003")
+        assert booking.amount_usd == Decimal("3450.00")
+        assert booking.fee_usd == Decimal("15.50")
 
-    def test_a_fee_row_carries_the_same_rate_as_its_parent(self, wise: Conversion) -> None:
-        parent = booking_by(wise, "9000000001")
-        assert booking_by(wise, "9000000001", fee=True).rate == parent.rate
+    def test_one_movement_produces_exactly_one_booking(self, wise: Conversion) -> None:
+        assert len({b.source_ref for b in wise.bookings}) == len(wise.bookings)
 
-    def test_a_fee_row_names_the_transaction_it_came_from(self, wise: Conversion) -> None:
-        fee = booking_by(wise, "9000000003", fee=True)
-        assert "Überweisung von Acme Client Inc" in fee.purpose
-        assert fee.purpose.startswith("Gebühr zu:")
+    def test_the_verwendungszweck_still_names_the_fee(self, wise: Conversion) -> None:
+        """Folding the fee in must not hide it."""
+        assert "davon 0,12 USD Gebühr" in booking_by(wise, "9000000001").purpose
 
-    def test_a_wise_fee_is_booked_against_the_bank_that_charged_it(self, wise: Conversion) -> None:
-        assert booking_by(wise, "9000000003", fee=True).name == "Wise"
+    def test_a_fee_taken_before_the_money_arrived_is_not_called_part_of_it(
+        self, wise: Conversion
+    ) -> None:
+        """3450.00 landed; the 15.50 was deducted from what was sent, not from this."""
+        assert "abzgl. 15,50 USD Gebühr" in booking_by(wise, "9000000003").purpose
 
-    def test_a_revolut_fee_row_stays_nameless(self, revolut: Conversion) -> None:
-        assert booking_by(revolut, "MERCHANT_PAYMENT", fee=True).name == ""
+    def test_a_row_without_a_fee_says_nothing_about_one(self, wise: Conversion) -> None:
+        assert "Gebühr" not in booking_by(wise, "9000000004").purpose
 
-    def test_a_row_that_is_only_a_fee_emits_the_fee_row_alone(self, revolut: Conversion) -> None:
-        """No zero-value main row is ever written."""
-        matching = [b for b in revolut.bookings if "Card delivery fee" in b.source_ref]
-        assert len(matching) == 1
-        assert matching[0].is_fee
+    def test_the_fee_is_recorded_for_every_booking(self, wise: Conversion) -> None:
+        assert booking_by(wise, "9000000004").fee_usd == Decimal(0)
 
-    def test_a_row_without_a_fee_emits_no_fee_row(self, wise: Conversion) -> None:
-        assert not any(b.is_fee for b in wise.bookings if "9000000004" in b.source_ref)
+    def test_a_row_that_is_only_a_fee_books_the_fee_alone(self, revolut: Conversion) -> None:
+        """A zero amount with a nonzero fee still moved the balance."""
+        booking = booking_by(revolut, "Card delivery fee")
+        assert booking.amount_usd == Decimal("-3.20")
+        assert booking.amount_eur == Decimal("-2.75")
 
-    def test_a_fee_too_small_to_book_is_reported_rather_than_dropped_silently(
+    def test_a_movement_too_small_to_book_is_reported_rather_than_dropped_silently(
         self, series: EcbSeries
     ) -> None:
         """Suppressing a sub-half-cent row would otherwise break reconciliation unseen."""
         payload = (
             "Type,Product,Started Date,Completed Date,Description,Amount,Fee,Currency,State,Balance\n"
-            "Topup,Pro,2026-06-11 10:00:00,2026-06-11 10:00:00,Top-up,100.00,0.001,USD,COMPLETED,99.999\n"
+            "Topup,Pro,2026-06-11 10:00:00,2026-06-11 10:00:00,Top-up,0.004,0.000,USD,COMPLETED,0.004\n"
         )
         conversion = convert(parse_statement(payload).movements, series, GERMAN)
-        assert not any(b.is_fee for b in conversion.bookings)
+        assert conversion.bookings == ()
         assert [drop.reason for drop in conversion.drops] == ["rounds_to_zero"]
-        assert "fee" in conversion.drops[0].detail
 
 
 class TestReconciliation:
@@ -150,7 +152,7 @@ class TestReconciliation:
 class TestVerwendungszweck:
     def test_it_states_the_original_usd_amount_and_the_rate(self, wise: Conversion) -> None:
         purpose = booking_by(wise, "9000000003").purpose
-        assert "3.465,50 USD zu Kurs " in purpose
+        assert "3.450,00 USD zu Kurs " in purpose
 
     def test_it_opens_with_the_sevdesk_phrasing_on_a_purchase(self, wise: Conversion) -> None:
         assert booking_by(wise, "9000000001").purpose.startswith(
@@ -171,10 +173,8 @@ class TestVerwendungszweck:
     ) -> None:
         statement = parse_statement(wise_statement.read_text())
         american = convert(statement.movements, series, US)
-        purpose = [b for b in american.bookings if "9000000003" in b.source_ref and not b.is_fee][
-            0
-        ].purpose
-        assert "3465.50 USD zu Kurs " in purpose
+        purpose = [b for b in american.bookings if "9000000003" in b.source_ref][0].purpose
+        assert "3450.00 USD zu Kurs " in purpose
 
 
 class TestRateReporting:
@@ -197,19 +197,12 @@ class TestDeterministicOrdering:
         dates = [b.booking_date for b in revolut.bookings]
         assert dates == sorted(dates)
 
-    def test_a_fee_row_follows_its_parent_immediately(self, revolut: Conversion) -> None:
-        refs = [b.source_ref for b in revolut.bookings]
-        parent = refs.index("2026-05-28 10:30:31 MERCHANT_PAYMENT Merchant payment")
-        assert revolut.bookings[parent + 1].is_fee
-        assert revolut.bookings[parent + 1].source_ref == refs[parent]
-
     def test_rows_settling_on_one_day_keep_their_order_in_the_export(
         self, revolut: Conversion
     ) -> None:
         same_day = [b for b in revolut.bookings if b.booking_date == date(2026, 5, 28)]
         assert [b.purpose.split(" |")[0] for b in same_day] == [
             "Merchant payment",
-            "Gebühr zu: Merchant payment",
             "Exchanged to EUR",
         ]
 

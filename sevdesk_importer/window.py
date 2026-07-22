@@ -55,6 +55,9 @@ def apply_window(
                     movement.source_ref,
                     "outside_window",
                     f"settled {movement.booking_date.isoformat()}, outside the requested window",
+                    movement.lead,
+                    movement.amount_usd - movement.fee_usd,
+                    "USD",
                 )
             )
     return tuple(kept), tuple(excluded)

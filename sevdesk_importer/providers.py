@@ -37,10 +37,9 @@ REVOLUT_TYPES = frozenset({"TOPUP", "EXCHANGE", "TRANSFER", "MERCHANT_PAYMENT"})
 
 ACCOUNT_CURRENCY = "USD"
 
-#: Fees are charged by the bank, not by the counterparty, so a Wise fee row is booked
-#: against Wise itself. Revolut rows never carry a name at all.
-WISE_FEE_NAME = "Wise"
-REVOLUT_FEE_NAME = ""
+#: Wise leaves its own side of an internal row blank. Falling back to the provider
+#: keeps the Name column filled without ever naming the account holder.
+WISE_PROVIDER_NAME = "Wise"
 
 
 class StatementError(Exception):
@@ -103,8 +102,16 @@ def _parse_wise(rows: list[dict[str, str]]) -> Statement:
 
         settled_at = _text(row, "Finished on")
         status = _text(row, "Status").upper()
+        incoming = direction == "IN"
         if status != "COMPLETED" or not settled_at:
-            drops.append(Drop(identifier, "not_settled", f"status {status or 'missing'}"))
+            drops.append(
+                Drop(
+                    identifier,
+                    "not_settled",
+                    f"status {status or 'missing'}",
+                    *_wise_drop_value(row, incoming=incoming),
+                )
+            )
             continue
 
         source_currency = _text(row, "Source currency").upper()
@@ -115,6 +122,7 @@ def _parse_wise(rows: list[dict[str, str]]) -> Statement:
                     identifier,
                     "funded_from_other_currency",
                     f"funded from the {source_currency} balance, which sevDesk imports separately",
+                    *_wise_drop_value(row, incoming=incoming),
                 )
             )
             continue
@@ -124,11 +132,11 @@ def _parse_wise(rows: list[dict[str, str]]) -> Statement:
                     identifier,
                     "credited_to_other_currency",
                     f"credited to the {target_currency} balance",
+                    *_wise_drop_value(row, incoming=incoming),
                 )
             )
             continue
 
-        incoming = direction == "IN"
         fee_usd = _wise_fee(row)
         counterparty = _wise_counterparty(row, incoming=incoming)
 
@@ -153,13 +161,22 @@ def _parse_wise(rows: list[dict[str, str]]) -> Statement:
                 ),
                 amount_usd=amount_usd,
                 fee_usd=fee_usd,
-                fee_name=WISE_FEE_NAME,
                 recorded_rate=_wise_recorded_rate(row, source_currency, target_currency),
                 order=order,
             )
         )
 
     return Statement("wise", len(rows), tuple(movements), tuple(drops))
+
+
+def _wise_drop_value(row: dict[str, str], *, incoming: bool) -> tuple[str, Decimal, str]:
+    """What a dropped row was worth, described and in its own currency."""
+    side = "Target" if incoming else "Source"
+    return (
+        _wise_counterparty(row, incoming=incoming),
+        _amount(row, f"{side} amount (after fees)"),
+        _text(row, f"{side} currency").upper(),
+    )
 
 
 def _invoice_totals(rows: list[dict[str, str]]) -> dict[tuple[str, str], Decimal]:
@@ -197,7 +214,7 @@ def _wise_counterparty(row: dict[str, str], *, incoming: bool) -> str:
     correct side is what keeps the Name column from ever being empty.
     """
     name = _text(row, "Source name") if incoming else _text(row, "Target name")
-    return name or WISE_FEE_NAME
+    return name or WISE_PROVIDER_NAME
 
 
 def _wise_recorded_rate(row: dict[str, str], source: str, target: str) -> Decimal | None:
@@ -272,12 +289,30 @@ def _parse_revolut(rows: list[dict[str, str]]) -> Statement:
 
         state = _text(row, "State").upper()
         if state != "COMPLETED" or not completed_at:
-            drops.append(Drop(reference, "not_settled", f"state {state or 'missing'}"))
+            drops.append(
+                Drop(
+                    reference,
+                    "not_settled",
+                    f"state {state or 'missing'}",
+                    description,
+                    _amount(row, "Amount"),
+                    _text(row, "Currency").upper(),
+                )
+            )
             continue
 
         currency = _text(row, "Currency").upper()
         if currency != ACCOUNT_CURRENCY:
-            drops.append(Drop(reference, "other_currency", f"denominated in {currency}"))
+            drops.append(
+                Drop(
+                    reference,
+                    "other_currency",
+                    f"denominated in {currency}",
+                    description,
+                    _amount(row, "Amount"),
+                    currency,
+                )
+            )
             continue
 
         # Revolut signs Amount and always deducts Fee, so the balance moved by
@@ -285,7 +320,16 @@ def _parse_revolut(rows: list[dict[str, str]]) -> Statement:
         amount_usd = _amount(row, "Amount")
         fee_usd = _amount(row, "Fee")
         if amount_usd == 0 and fee_usd == 0:
-            drops.append(Drop(reference, "no_balance_movement", "amount and fee are both zero"))
+            drops.append(
+                Drop(
+                    reference,
+                    "no_balance_movement",
+                    "amount and fee are both zero",
+                    description,
+                    Decimal(0),
+                    currency,
+                )
+            )
             continue
 
         movements.append(
@@ -296,7 +340,6 @@ def _parse_revolut(rows: list[dict[str, str]]) -> Statement:
                 lead=description or revolut_type.title(),
                 amount_usd=amount_usd,
                 fee_usd=fee_usd,
-                fee_name=REVOLUT_FEE_NAME,
                 recorded_rate=None,
                 order=order,
             )

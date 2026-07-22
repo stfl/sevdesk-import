@@ -36,7 +36,7 @@ request — CI runs the tests, types, the format check and a package build on ev
 
 `sevdesk_importer/` holds the converter. Reading an export is `providers.py`, which turns
 both schemas into one `Movement` record; pricing is `conversion.py`, which splits fees into
-their own rows; `rates.py` owns the ECB series and the resolution order. `cli.py` wires them
+one booking each; `rates.py` owns the ECB series and the resolution order. `cli.py` wires them
 together and chooses the exit code.
 
 ## Stack
@@ -72,8 +72,10 @@ contract rather than as preferences.
 - **A row is emitted only if it moved this account's USD balance.** Wise: `OUT` with source
   currency USD, or `IN` with target currency USD. This excludes the EUR-funded leg of a
   split-currency card payment, which sevDesk already holds from the Wise EUR auto-import.
-- **Fees are separate rows**, same date and rate as their parent, so they stay deductible as
-  Bankspesen. Emitted rows must still sum to the real balance movement.
+- **A bank fee is folded into the booking it belongs to**, never split into a second row. One
+  provider row is one booking, whose amount is the net movement of the balance, because that
+  is the single line the bank statement itself shows. The fee is named in the Verwendungszweck
+  and recorded per booking in the report, so it stays visible without being booked apart.
 - **One statement, one output file, one sevDesk bank account.** No cross-file matching.
 
 ## Traps

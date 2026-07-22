@@ -62,15 +62,20 @@ It prints a short summary:
 ```
 Read 8 rows from wise-usd.csv (wise)
 Window start of statement to 2026-06-14, both inclusive
-Emitted 8 bookings to wise.sevdesk.csv
+Emitted 6 bookings to wise.sevdesk.csv
 Dropped 2 rows: 1 funded_from_other_currency, 1 not_settled
-Booked 3045.94 EUR credited, 685.65 EUR debited (2782.98 USD net)
+  Example SaaS Ltd — 4.50 EUR — funded from the EUR balance, which sevDesk imports separately
+  Reverted Recipient — 500.00 USD — status CANCELLED
+Moved 3565.40 USD in, 782.42 USD out, 2782.98 USD net
+Fees 15.62 USD
+Booked 3032.77 EUR in, 672.48 EUR out, 2360.29 EUR net
 Next run: --since 2026-06-15
 Warning: No ECB reference rate published for 2026-05-31; used the previous published business day 2026-05-29 (1.1644 USD/EUR).
 ```
 
-Read three things here: **how many bookings** you are about to import, **what got dropped** and
-why (§6), and the **`--since` for next time** (§4).
+Read three things here: **how many bookings** you are about to import, **what got dropped** —
+each named with its own value — and the **`--since` for next time** (§4). Totals are stated in
+USD as the bank moved them, and again in EUR as they were booked.
 
 Want the machine-readable version instead? `--output json` replaces the summary with the full
 report on stdout, and nothing else shares it, so you can pipe it straight into `jq`:
@@ -95,8 +100,7 @@ Neobank Top-up;Kartenzahlung an Neobank Top-up | 750,00 USD zu Kurs 0,858811;29.
 Direction is the sign of `Betrag`: positive credits the account, negative debits it.
 
 Every row states the original USD amount and the rate used, so you can check any figure
-without opening the source export. Bank fees are their own rows, booked against the bank, so
-you can assign them to Bankspesen in one click.
+without opening the source export, and names any bank fee that was charged.
 
 ## 3. Import it into sevDesk
 
@@ -217,10 +221,11 @@ reported and never silent. If none resolves, the run refuses rather than guessin
 are cached between runs under `$XDG_CACHE_HOME/sevdesk-importer/`; deleting that is always
 safe.
 
-**Fees become their own rows** at the same date and rate, so they stay deductible as
-Bankspesen instead of vanishing inside a payment. An incoming transfer is booked gross with
-its fee as a separate debit, so revenue is stated in full. The emitted rows still sum to the
-real movement of your balance.
+**A bank fee is folded into the booking it belongs to.** One row of your statement becomes one
+booking, for the amount the balance actually moved by — a 32.00 card payment charged 0.12 of
+fee is a single booking of 32.12, exactly the line the bank shows. The Verwendungszweck names
+the fee (`davon 0,12 USD Gebühr` on a debit, `abzgl.` on a credit, where the fee was taken
+before the money arrived), and the report records it per booking under `fee_usd`.
 
 **Only rows that moved this account's USD balance are emitted**, so spending drawn from a
 different currency balance is never booked against this account.

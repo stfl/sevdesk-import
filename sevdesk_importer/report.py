@@ -93,20 +93,43 @@ def render_summary(report: dict[str, Any]) -> str:
     if report["dropped"]:
         reasons = Counter(drop["reason"] for drop in report["dropped"])
         detail = ", ".join(f"{count} {reason}" for reason, count in sorted(reasons.items()))
-        lines.append(f"Dropped {counts['rows_dropped']} rows: {detail}")
+        lines.append(f"Dropped {_rows(counts['rows_dropped'])}: {detail}")
+        lines += [f"  {_dropped_line(drop)}" for drop in report["dropped"]]
     if counts["rows_outside_window"]:
-        lines.append(f"Outside the window: {counts['rows_outside_window']} rows")
+        lines.append(f"Outside the window: {_rows(counts['rows_outside_window'])}")
     lines.append(
-        f"Booked {totals['eur_credited']} EUR credited, {totals['eur_debited']} EUR debited "
-        f"({totals['usd_net']} USD net)"
+        f"Moved {totals['usd_credited']} USD in, {totals['usd_debited']} USD out, "
+        f"{totals['usd_net']} USD net"
+    )
+    lines.append(f"Fees {totals['usd_fees']} USD")
+    lines.append(
+        f"Booked {totals['eur_credited']} EUR in, {totals['eur_debited']} EUR out, "
+        f"{totals['eur_net']} EUR net"
     )
     lines.append(f"Next run: --since {window['next_since']}")
     lines += [f"Warning: {warning}" for warning in report["warnings"]]
     return "\n".join(lines)
 
 
+def _rows(count: int) -> str:
+    return f"{count} row" if count == 1 else f"{count} rows"
+
+
+def _dropped_line(drop: dict[str, str]) -> str:
+    """One dropped row, named and valued, so nothing vanishes without a figure."""
+    described = drop["description"] or drop["source_ref"]
+    return f"{described} — {drop['amount']} {drop['currency']} — {drop['detail']}"
+
+
 def _drop(drop: Drop) -> dict[str, str]:
-    return {"source_ref": drop.source_ref, "reason": drop.reason, "detail": drop.detail}
+    return {
+        "source_ref": drop.source_ref,
+        "reason": drop.reason,
+        "detail": drop.detail,
+        "description": drop.description,
+        "amount": str(drop.amount),
+        "currency": drop.currency,
+    }
 
 
 def _booking(booking: Booking) -> dict[str, Any]:
@@ -114,8 +137,8 @@ def _booking(booking: Booking) -> dict[str, Any]:
     return {
         "source_ref": booking.source_ref,
         "booking_date": booking.booking_date.isoformat(),
-        "is_fee": booking.is_fee,
         "amount_usd": str(booking.amount_usd),
+        "fee_usd": str(booking.fee_usd),
         "amount_eur": str(booking.amount_eur),
         "usd_to_eur": str(booking.rate.usd_to_eur),
         "rate_provenance": booking.rate.provenance,
@@ -139,6 +162,7 @@ def _totals(bookings: Iterable[Booking]) -> dict[str, str]:
         "usd_credited": str(usd_in),
         "usd_debited": str(usd_out),
         "usd_net": str(usd_in - usd_out),
+        "usd_fees": str(sum((b.fee_usd for b in rows), Decimal(0))),
         "eur_credited": str(eur_in),
         "eur_debited": str(eur_out),
         "eur_net": str(eur_in - eur_out),

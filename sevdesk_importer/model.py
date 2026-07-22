@@ -29,18 +29,24 @@ class Movement:
     lead: str
     amount_usd: Decimal
     fee_usd: Decimal
-    fee_name: str
     recorded_rate: Decimal | None
     order: int
 
 
 @dataclass(frozen=True)
 class Drop:
-    """A row that was read but not emitted, and why. Nothing disappears silently."""
+    """A row that was read but not emitted, and why. Nothing disappears silently.
+
+    `amount` is carried in the row's own currency, which for a dropped row is often
+    not USD — that is frequently the very reason it was dropped.
+    """
 
     source_ref: str
     reason: str
     detail: str
+    description: str = ""
+    amount: Decimal = Decimal(0)
+    currency: str = "USD"
 
 
 @dataclass(frozen=True)
@@ -55,7 +61,11 @@ class Statement:
 
 @dataclass(frozen=True)
 class Booking:
-    """One row of the sevDesk CSV.
+    """One row of the sevDesk CSV, and one line of the real bank statement.
+
+    `amount_usd` is the net movement, with any bank fee already folded in, so the
+    figure matches what the account actually moved by. `fee_usd` records how much of
+    it was fee, which the report states and the Verwendungszweck names.
 
     `amount_eur` is signed and already rounded — rounding happens once, here, so
     serialization only ever formats digits.
@@ -65,7 +75,7 @@ class Booking:
     purpose: str
     booking_date: date
     amount_usd: Decimal
+    fee_usd: Decimal
     amount_eur: Decimal
     rate: Rate
     source_ref: str
-    is_fee: bool

@@ -100,7 +100,7 @@ class TestWhatItPrints:
 
         assert not printed.lstrip().startswith("{")
         assert "Read 7 rows" in printed
-        assert "Emitted 7 bookings" in printed
+        assert "Emitted 6 bookings" in printed
 
     def test_the_summary_states_the_window_and_the_next_lower_bound(
         self,
@@ -146,7 +146,7 @@ class TestWhatItPrints:
         )
         report = json.loads(capsys.readouterr().out)
 
-        assert report["counts"]["bookings_emitted"] == 7
+        assert report["counts"]["bookings_emitted"] == 6
         assert report["exit_code"] == 2
 
     def test_a_report_file_can_be_written_alongside_the_summary(
@@ -169,8 +169,51 @@ class TestWhatItPrints:
             ]
         )
 
-        assert "Emitted 7 bookings" in capsys.readouterr().out
-        assert json.loads(report_path.read_text())["counts"]["bookings_emitted"] == 7
+        assert "Emitted 6 bookings" in capsys.readouterr().out
+        assert json.loads(report_path.read_text())["counts"]["bookings_emitted"] == 6
+
+    def test_a_dropped_row_is_named_and_valued_not_just_counted(
+        self,
+        wise_statement: Path,
+        tmp_path: Path,
+        offline_ecb: None,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """A count alone does not say what went missing."""
+        main([str(wise_statement), "-o", str(tmp_path / "out.csv"), "--until", "2026-06-14"])
+        printed = capsys.readouterr().out
+
+        assert "Example SaaS Ltd" in printed
+        assert "4.50 EUR" in printed, "a dropped row states its own value, in its own currency"
+
+    def test_the_summary_states_the_fees_charged(
+        self,
+        wise_statement: Path,
+        tmp_path: Path,
+        offline_ecb: None,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """0.12 on the card payment plus 15.50 on the transfer."""
+        main([str(wise_statement), "-o", str(tmp_path / "out.csv"), "--until", "2026-06-14"])
+        assert "Fees 15.62 USD" in capsys.readouterr().out
+
+    def test_no_line_mixes_two_currencies(
+        self,
+        wise_statement: Path,
+        tmp_path: Path,
+        offline_ecb: None,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        main([str(wise_statement), "-o", str(tmp_path / "out.csv"), "--until", "2026-06-14"])
+
+        totals = [
+            line
+            for line in capsys.readouterr().out.splitlines()
+            if line.startswith(("Moved", "Fees", "Booked"))
+        ]
+        assert totals
+        for line in totals:
+            assert not ("USD" in line and "EUR" in line), f"mixed currencies: {line!r}"
 
     def test_an_unknown_output_kind_is_refused(
         self, revolut_statement: Path, tmp_path: Path
@@ -299,6 +342,7 @@ class TestReport:
             "usd_credited",
             "usd_debited",
             "usd_net",
+            "usd_fees",
             "eur_credited",
             "eur_debited",
             "eur_net",
