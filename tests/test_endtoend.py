@@ -4,7 +4,8 @@ Exactly one test here asserts on the *shape* of the written bytes, and it covers
 serialization only — header names, column order, delimiter, quoting and decimal
 separator, which are what the sevDesk wizard keys on and what no assertion over
 records would catch. One further test reads the file only to check that two runs
-agree, pinning no part of the format. Everything else asserts on the JSON report.
+agree, pinning no part of the format. Everything else asserts on what the command
+prints, or on the JSON report.
 """
 
 from __future__ import annotations
@@ -20,9 +21,9 @@ import pytest
 
 from sevdesk_importer.cli import main
 
-GERMAN_AMOUNT = re.compile(r"^\d{1,3}(\.\d{3})*,\d{2}$")
+GERMAN_AMOUNT = re.compile(r"^-?\d{1,3}(\.\d{3})*,\d{2}$")
 GERMAN_DATE = re.compile(r"^[1-9]\d?\.[1-9]\d?\.\d{4}$")
-US_AMOUNT = re.compile(r"^\d+\.\d{2}$")
+US_AMOUNT = re.compile(r"^-?\d+\.\d{2}$")
 US_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -43,16 +44,21 @@ class TestSerialization:
         german = german_path.read_bytes().decode("utf-8")
 
         header, *rows = german.split("\r\n")[:-1]
-        assert header == "Name;Verwendungszweck;Buchungstag;Gutschrift;Belastung"
+        assert header == "Name;Verwendungszweck;Buchungstag;Betrag"
         assert german.endswith("\r\n"), "rows are CRLF terminated"
         assert '"' not in german, "a semicolon delimiter never collides with a decimal comma"
 
+        amounts = []
         for row in rows:
-            name, purpose, day, credit, debit = row.split(";")
+            name, purpose, day, amount = row.split(";")
             assert GERMAN_DATE.match(day), f"{day!r} is not D.M.YYYY"
-            assert bool(credit) != bool(debit), "exactly one amount column carries the value"
-            assert GERMAN_AMOUNT.match(credit or debit), f"{credit or debit!r} is not German"
+            assert GERMAN_AMOUNT.match(amount), f"{amount!r} is not a German amount"
             assert purpose
+            amounts.append(amount)
+
+        # Direction rides on the sign of the one amount column, so both must appear.
+        assert any(a.startswith("-") for a in amounts), "no debit written"
+        assert any(not a.startswith("-") for a in amounts), "no credit written"
 
         us_output = tmp_path / "us.csv"
         main(
@@ -71,12 +77,106 @@ class TestSerialization:
         american = us_output.read_bytes().decode("utf-8")
 
         us_header, *us_rows = american.split("\r\n")[:-1]
-        assert us_header == "Name,Verwendungszweck,Buchungstag,Gutschrift,Belastung"
+        assert us_header == "Name,Verwendungszweck,Buchungstag,Betrag"
         for row in us_rows:
-            _, _, day, credit, debit = next(iter(csv.reader(io.StringIO(row))))
+            _, _, day, amount = next(iter(csv.reader(io.StringIO(row))))
             assert US_DATE.match(day), f"{day!r} is not ISO"
-            assert US_AMOUNT.match(credit or debit), f"{credit or debit!r} is not US"
-            assert "," not in (credit or debit), "US amounts never group thousands"
+            assert US_AMOUNT.match(amount), f"{amount!r} is not a US amount"
+            assert "," not in amount, "US amounts never group thousands"
+
+
+class TestWhatItPrints:
+    """stdout is the run's result: readable by default, JSON on request."""
+
+    def test_the_default_is_a_readable_summary_not_json(
+        self,
+        revolut_statement: Path,
+        tmp_path: Path,
+        offline_ecb: None,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        main([str(revolut_statement), "-o", str(tmp_path / "out.csv"), "--until", "2026-06-30"])
+        printed = capsys.readouterr().out
+
+        assert not printed.lstrip().startswith("{")
+        assert "Read 7 rows" in printed
+        assert "Emitted 7 bookings" in printed
+
+    def test_the_summary_states_the_window_and_the_next_lower_bound(
+        self,
+        revolut_statement: Path,
+        tmp_path: Path,
+        offline_ecb: None,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        main([str(revolut_statement), "-o", str(tmp_path / "out.csv"), "--until", "2026-06-30"])
+        printed = capsys.readouterr().out
+
+        assert "2026-06-30" in printed
+        assert "--since 2026-07-01" in printed
+
+    def test_the_summary_surfaces_warnings(
+        self,
+        revolut_statement: Path,
+        tmp_path: Path,
+        offline_ecb: None,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        main([str(revolut_statement), "-o", str(tmp_path / "out.csv"), "--until", "2026-06-30"])
+        assert "Warning:" in capsys.readouterr().out
+
+    def test_output_json_prints_the_report_and_nothing_else(
+        self,
+        revolut_statement: Path,
+        tmp_path: Path,
+        offline_ecb: None,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """An agent parses stdout whole, so nothing may share it."""
+        main(
+            [
+                str(revolut_statement),
+                "-o",
+                str(tmp_path / "out.csv"),
+                "--until",
+                "2026-06-30",
+                "--output",
+                "json",
+            ]
+        )
+        report = json.loads(capsys.readouterr().out)
+
+        assert report["counts"]["bookings_emitted"] == 7
+        assert report["exit_code"] == 2
+
+    def test_a_report_file_can_be_written_alongside_the_summary(
+        self,
+        revolut_statement: Path,
+        tmp_path: Path,
+        offline_ecb: None,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        report_path = tmp_path / "report.json"
+        main(
+            [
+                str(revolut_statement),
+                "-o",
+                str(tmp_path / "out.csv"),
+                "--until",
+                "2026-06-30",
+                "--report",
+                str(report_path),
+            ]
+        )
+
+        assert "Emitted 7 bookings" in capsys.readouterr().out
+        assert json.loads(report_path.read_text())["counts"]["bookings_emitted"] == 7
+
+    def test_an_unknown_output_kind_is_refused(
+        self, revolut_statement: Path, tmp_path: Path
+    ) -> None:
+        with pytest.raises(SystemExit):
+            main([str(revolut_statement), "-o", str(tmp_path / "out.csv"), "--output", "yaml"])
 
 
 class TestExitCodes:

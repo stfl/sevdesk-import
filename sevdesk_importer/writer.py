@@ -1,8 +1,8 @@
 """Serialising bookings into the CSV the sevDesk import wizard reads.
 
-Direction is expressed by which of the two amount columns is populated, the other
-being empty. That requires "Gutschrift & Belastung einblenden" to be enabled in the
-wizard, which is an import-time prerequisite rather than a code concern.
+Direction is carried by the sign of a single `Betrag` column: positive credits the
+account, negative debits it. The wizard reads the sign directly, so no column is
+ever empty and no wizard-side toggle is required to see the amounts.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from sevdesk_importer.formatting import Convention
 from sevdesk_importer.model import Booking
 
-COLUMNS = ("Name", "Verwendungszweck", "Buchungstag", "Gutschrift", "Belastung")
+COLUMNS = ("Name", "Verwendungszweck", "Buchungstag", "Betrag")
 
 
 def render_csv(bookings: Iterable[Booking], convention: Convention) -> str:
@@ -27,15 +27,12 @@ def render_csv(bookings: Iterable[Booking], convention: Convention) -> str:
     )
     writer.writerow(COLUMNS)
     for booking in bookings:
-        credit = booking.gutschrift
-        debit = booking.belastung
         writer.writerow(
             [
                 booking.name,
                 booking.purpose,
                 convention.date(booking.booking_date),
-                convention.amount(credit) if credit is not None else "",
-                convention.amount(debit) if debit is not None else "",
+                convention.amount(booking.amount_eur),
             ]
         )
     return buffer.getvalue()
