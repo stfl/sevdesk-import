@@ -11,7 +11,7 @@ import sys
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import NoReturn
 
 from sevdesk_importer import __version__
 from sevdesk_importer.conversion import convert
@@ -81,13 +81,11 @@ def _run(args: argparse.Namespace) -> int:
         )
 
     exit_code = EXIT_WARNINGS if warnings else EXIT_CLEAN
-    args.output.write_text(
-        render_csv(conversion.bookings, convention), encoding="utf-8", newline=""
-    )
+    args.out.write_text(render_csv(conversion.bookings, convention), encoding="utf-8", newline="")
 
     report = build_report(
         source=str(args.statement),
-        output=str(args.output),
+        output=str(args.out),
         statement=statement,
         conversion=conversion,
         excluded=excluded,
@@ -96,18 +94,16 @@ def _run(args: argparse.Namespace) -> int:
         warnings=warnings,
         exit_code=exit_code,
     )
-    _emit_report(report, args.report)
-    # The summary goes to stderr so stdout stays machine-readable.
-    print(render_summary(report), file=sys.stderr)
-    return exit_code
+    if args.report is not None:
+        args.report.write_text(render_report(report), encoding="utf-8")
 
-
-def _emit_report(report: dict[str, Any], destination: Path | None) -> None:
-    rendered = render_report(report)
-    if destination is None:
-        sys.stdout.write(rendered)
+    # Under --output json stdout carries the report and nothing else, so an agent
+    # can parse it whole.
+    if args.output == "json":
+        sys.stdout.write(render_report(report))
     else:
-        destination.write_text(rendered, encoding="utf-8")
+        print(render_summary(report))
+    return exit_code
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -120,14 +116,25 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("statement", type=Path, help="Wise or Revolut USD statement export")
     parser.add_argument(
-        "-o", "--output", type=Path, required=True, help="where to write the sevDesk CSV"
+        "-o",
+        "--out",
+        type=Path,
+        required=True,
+        metavar="PATH",
+        help="where to write the sevDesk CSV",
+    )
+    parser.add_argument(
+        "--output",
+        choices=("text", "json"),
+        default="text",
+        help="what to print: a readable summary, or the full JSON report (default: text)",
     )
     parser.add_argument(
         "--report",
         type=Path,
         default=None,
         metavar="PATH",
-        help="write the JSON run report here instead of stdout",
+        help="also write the JSON run report to this file",
     )
     parser.add_argument(
         "--format",

@@ -57,7 +57,7 @@ just run wise-usd.csv wise.sevdesk.csv --since 2026-05-01
 
 [direnv]: https://direnv.net
 
-It prints a short summary to stderr:
+It prints a short summary:
 
 ```
 Read 8 rows from wise-usd.csv (wise)
@@ -72,22 +72,27 @@ Warning: No ECB reference rate published for 2026-05-31; used the previous publi
 Read three things here: **how many bookings** you are about to import, **what got dropped** and
 why (§6), and the **`--since` for next time** (§4).
 
-The full JSON report goes to stdout, so redirect it if you want to keep it:
+Want the machine-readable version instead? `--output json` replaces the summary with the full
+report on stdout, and nothing else shares it, so you can pipe it straight into `jq`:
 
 ```bash
-nix run . -- wise-usd.csv -o wise.sevdesk.csv --report wise.report.json
+nix run . -- wise-usd.csv -o wise.sevdesk.csv --output json | jq .counts
 ```
+
+`--report PATH` writes that same JSON to a file while leaving the summary on screen.
 
 ### What comes out
 
 ```
-Name;Verwendungszweck;Buchungstag;Gutschrift;Belastung
-Acme Client Inc;Überweisung von Acme Client Inc (SampleACH) | 3.465,50 USD zu Kurs 0,849979;11.5.2026;2.945,60;
-Wise;Gebühr zu: Überweisung von Acme Client Inc (SampleACH) | 15,50 USD zu Kurs 0,849979;11.5.2026;;13,17
-Example SaaS Ltd;Card transaction of 32.50 EUR issued by Example SaaS Ltd | 32,00 USD zu Kurs 0,875000;21.5.2026;;28,00
-Wise;Gebühr zu: Card transaction of 32.50 EUR issued by Example SaaS Ltd | 0,12 USD zu Kurs 0,875000;21.5.2026;;0,11
-Neobank Top-up;Kartenzahlung an Neobank Top-up | 750,00 USD zu Kurs 0,858811;29.5.2026;;644,11
+Name;Verwendungszweck;Buchungstag;Betrag
+Acme Client Inc;Überweisung von Acme Client Inc (SampleACH) | 3.465,50 USD zu Kurs 0,849979;11.5.2026;2.945,60
+Wise;Gebühr zu: Überweisung von Acme Client Inc (SampleACH) | 15,50 USD zu Kurs 0,849979;11.5.2026;-13,17
+Example SaaS Ltd;Card transaction of 32.50 EUR issued by Example SaaS Ltd | 32,00 USD zu Kurs 0,875000;21.5.2026;-28,00
+Wise;Gebühr zu: Card transaction of 32.50 EUR issued by Example SaaS Ltd | 0,12 USD zu Kurs 0,875000;21.5.2026;-0,11
+Neobank Top-up;Kartenzahlung an Neobank Top-up | 750,00 USD zu Kurs 0,858811;29.5.2026;-644,11
 ```
+
+Direction is the sign of `Betrag`: positive credits the account, negative debits it.
 
 Every row states the original USD amount and the rate used, so you can check any figure
 without opening the source export. Bank fees are their own rows, booked against the bank, so
@@ -95,14 +100,11 @@ you can assign them to Bankspesen in one click.
 
 ## 3. Import it into sevDesk
 
-1. In the bank-import wizard, enable **"Gutschrift & Belastung einblenden"**. Direction is
-   expressed by *which* of the two amount columns is filled, so without this toggle the wizard
-   cannot see the amounts.
-2. Set the number and date format to **German** (`1.234,56`, `31.12.2026`). That is what the
+1. Set the number and date format to **German** (`1.234,56`, `31.12.2026`). That is what the
    converter writes by default. If your wizard is set to US conventions, convert with
    `--format us` instead and the delimiter follows automatically.
-3. Map the five columns straight across: `Name`, `Verwendungszweck`, `Buchungstag`,
-   `Gutschrift`, `Belastung`.
+2. Map the four columns straight across: `Name`, `Verwendungszweck`, `Buchungstag`, `Betrag`.
+   Direction rides on the sign of `Betrag`, so no wizard-side column toggle is needed.
 
 ### A payment split across two balances
 
@@ -143,8 +145,9 @@ Omit `--since` for no lower bound; omit `--until` and it means today.
 
 | Option | Meaning |
 | --- | --- |
-| `-o PATH` | where to write the sevDesk CSV (required) |
-| `--report PATH` | write the JSON report here instead of stdout |
+| `-o`, `--out PATH` | where to write the sevDesk CSV (required) |
+| `--output text\|json` | what to print: a readable summary, or the full JSON report (default: text) |
+| `--report PATH` | also write the JSON report to this file |
 | `--format german\|us` | number and date convention; the delimiter follows from it (default German) |
 | `--since YYYY-MM-DD` | earliest settlement date to convert, inclusive (default: no lower bound) |
 | `--until YYYY-MM-DD` | latest settlement date to convert, inclusive (default: today in Vienna) |
@@ -196,7 +199,8 @@ states the figure but does not make the entry.
 | `transaction type 'X' has no booking rule` | your bank used a type this tool has never seen. It refuses rather than mis-book it; open an issue with the type name |
 | `No ECB reference rate for …` | the window reaches into days the ECB has not published (usually the future). Lower `--until` |
 | Exit `2`, "No rows were emitted" | the window missed your data — check `--since` / `--until` against the statement's dates |
-| The wizard shows no amounts | "Gutschrift & Belastung einblenden" is off, or the wizard's number format does not match `--format` |
+| The wizard shows no amounts | its number format does not match `--format` — German by default |
+| Every amount imports as a credit | the wizard is ignoring the sign of `Betrag`; map that column as a signed amount rather than as a credit-only one |
 | A row you expected is missing | check `dropped` in the report; the EUR-funded leg of a split card payment is excluded on purpose (§3) |
 
 ## How the numbers are decided
