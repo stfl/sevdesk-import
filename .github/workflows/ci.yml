@@ -34,14 +34,15 @@ jobs:
       - name: Build dev shell
         run: nix develop --command python3 --version
 
+      # Each step runs the same recipe a contributor runs, so the two cannot drift.
       - name: Unit tests
-        run: nix develop --command pytest -q
+        run: nix develop --command just test -q
 
       - name: Types
-        run: nix develop --command mypy
+        run: nix develop --command just types
 
       - name: Format
-        run: nix develop --command ruff format --check .
+        run: nix develop --command just fmt-check
 
       - name: Package builds
-        run: nix build .#sevdesk-importer && nix run . -- --version
+        run: nix develop --command just build

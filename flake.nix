@@ -55,6 +55,7 @@
           packages = [
             (pkgs.python3.withPackages (ps: [ ps.pytest ps.mypy ps.tzdata ]))
             pkgs.ruff
+            pkgs.just
           ] ++ self.checks.${systemOf pkgs}.pre-commit.enabledPackages;
         };
       });
