@@ -1,5 +1,10 @@
 # sevdesk-importer
 
+> **This repository is archived.** The converter lives on as the `sevdesk-import`
+> skill inside [stfl/sevdesk-probe](https://github.com/stfl/sevdesk-probe)
+> (`.claude/skills/sevdesk-import/`), where it gained per-account import state
+> that guards against double-booking. Development continues there.
+
 sevDesk only supports bank accounts denominated in EUR. If you hold USD — a Wise USD balance,
 a Revolut Pro USD balance — that money is invisible to your bookkeeping: you cannot import
 either statement, so client payments, card spend and bank fees on those accounts never reach
