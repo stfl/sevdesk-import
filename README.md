@@ -1,8 +1,8 @@
 # sevdesk-importer
 
-> **This repository is archived.** The converter lives on as the `sevdesk-import`
+> **This repository is archived.** The converter lives on as the `sevdesk-usd-import`
 > skill inside [stfl/sevdesk-probe](https://github.com/stfl/sevdesk-probe)
-> (`.claude/skills/sevdesk-import/`), where it gained per-account import state
+> (`.claude/skills/sevdesk-usd-import/`), where it gained per-account import state
 > that guards against double-booking. Development continues there.
 
 sevDesk only supports bank accounts denominated in EUR. If you hold USD — a Wise USD balance,
