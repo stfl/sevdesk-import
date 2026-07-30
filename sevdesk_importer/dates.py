@@ -30,5 +30,5 @@ def vienna_date_from_local(stamp: datetime) -> date:
 
 
 def today_in_vienna() -> date:
-    """Default upper bound of the import window."""
+    """The current Vienna day, which divides settled history from what the ECB may still publish."""
     return datetime.now(tz=VIENNA).date()

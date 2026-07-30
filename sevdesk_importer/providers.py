@@ -15,12 +15,12 @@ from __future__ import annotations
 import csv
 import io
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from sevdesk_importer.dates import vienna_date_from_local, vienna_date_from_utc
 from sevdesk_importer.formatting import round_eur
-from sevdesk_importer.model import Drop, Movement, Statement
+from sevdesk_importer.model import Drop, Movement, Statement, Unsettled
 
 #: Wise encodes the transaction type as the prefix of its identifier. The mapping is
 #: also the whitelist: a type that is not here has no known booking phrasing, and is
@@ -84,6 +84,7 @@ def _parse_wise(rows: list[dict[str, str]]) -> Statement:
     invoice_totals = _invoice_totals(rows)
     movements: list[Movement] = []
     drops: list[Drop] = []
+    unsettled: list[Unsettled] = []
 
     for order, row in enumerate(rows):
         identifier = _text(row, "ID")
@@ -112,6 +113,10 @@ def _parse_wise(rows: list[dict[str, str]]) -> Statement:
                     *_wise_drop_value(row, incoming=incoming),
                 )
             )
+            if _moves_usd_when_settled(row, incoming=incoming):
+                unsettled.append(
+                    Unsettled(identifier, status, _initiated_on(row, "Created on", identifier))
+                )
             continue
 
         source_currency = _text(row, "Source currency").upper()
@@ -166,7 +171,18 @@ def _parse_wise(rows: list[dict[str, str]]) -> Statement:
             )
         )
 
-    return Statement("wise", len(rows), tuple(movements), tuple(drops))
+    return Statement("wise", len(rows), tuple(movements), tuple(drops), tuple(unsettled))
+
+
+def _moves_usd_when_settled(row: dict[str, str], *, incoming: bool) -> bool:
+    """Whether an unsettled Wise row would touch this balance once it lands.
+
+    The same side-of-the-trade test that decides whether a settled row is kept, asked
+    of a row that has not settled: a pending EUR transfer is no reason to hold the USD
+    window back.
+    """
+    side = "Target" if incoming else "Source"
+    return _text(row, f"{side} currency").upper() == ACCOUNT_CURRENCY
 
 
 def _wise_drop_value(row: dict[str, str], *, incoming: bool) -> tuple[str, Decimal, str]:
@@ -271,6 +287,7 @@ def _wise_lead(
 def _parse_revolut(rows: list[dict[str, str]]) -> Statement:
     movements: list[Movement] = []
     drops: list[Drop] = []
+    unsettled: list[Unsettled] = []
 
     for order, row in enumerate(rows):
         written_type = _text(row, "Type")
@@ -299,6 +316,10 @@ def _parse_revolut(rows: list[dict[str, str]]) -> Statement:
                     _text(row, "Currency").upper(),
                 )
             )
+            if _text(row, "Currency").upper() == ACCOUNT_CURRENCY:
+                unsettled.append(
+                    Unsettled(reference, state, _initiated_on(row, "Started Date", reference))
+                )
             continue
 
         currency = _text(row, "Currency").upper()
@@ -345,10 +366,28 @@ def _parse_revolut(rows: list[dict[str, str]]) -> Statement:
             )
         )
 
-    return Statement("revolut", len(rows), tuple(movements), tuple(drops))
+    return Statement("revolut", len(rows), tuple(movements), tuple(drops), tuple(unsettled))
 
 
 # ------------------------------------------------------------------------- Shared
+
+
+def _initiated_on(row: dict[str, str], column: str, reference: str) -> date | None:
+    """The day the provider first saw a row, as the Vienna calendar day.
+
+    Read leniently: an unsettled row with no initiation date is a case the window
+    decides about, not one parsing can refuse on its own, because a row in a state
+    that can never settle needs no date at all.
+    """
+    raw = _optional_text(row, column)
+    if not raw:
+        return None
+    stamp = _timestamp(raw, reference)
+    # Wise stamps UTC and Revolut Vienna local, the same split as the settlement
+    # columns these sit beside.
+    if column == "Created on":
+        return vienna_date_from_utc(stamp)
+    return vienna_date_from_local(stamp)
 
 
 def _text(row: dict[str, str], column: str) -> str:

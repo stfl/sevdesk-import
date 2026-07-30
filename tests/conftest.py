@@ -36,14 +36,26 @@ def ecb_response() -> bytes:
     return (FIXTURES / "ecb-usd-eur.csv").read_bytes()
 
 
-@pytest.fixture
-def wise_statement() -> Path:
-    return FIXTURES / "wise-usd.csv"
+def _staged(name: str, tmp_path: Path) -> Path:
+    """A throwaway copy of a fixture export.
+
+    A run files the export it read into the run directory, so a test handed the
+    fixture itself would consume it. Every test gets its own copy instead.
+    """
+    staged = tmp_path / "inbox" / name
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    staged.write_bytes((FIXTURES / name).read_bytes())
+    return staged
 
 
 @pytest.fixture
-def revolut_statement() -> Path:
-    return FIXTURES / "revolut-usd.csv"
+def wise_statement(tmp_path: Path) -> Path:
+    return _staged("wise-usd.csv", tmp_path)
+
+
+@pytest.fixture
+def revolut_statement(tmp_path: Path) -> Path:
+    return _staged("revolut-usd.csv", tmp_path)
 
 
 @pytest.fixture(autouse=True)

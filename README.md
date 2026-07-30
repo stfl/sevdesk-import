@@ -14,11 +14,12 @@ This converts either statement into a CSV the sevDesk bank-import wizard accepts
 amount already expressed in EUR at the exchange rate of the day the money actually moved.
 
 ```bash
-nix run github:stfl/sevdesk-import -- wise-usd.csv -o wise.sevdesk.csv
+nix run github:stfl/sevdesk-import -- wise-usd.csv
 ```
 
 That is the whole tool. No build step, no account, no API keys — it reads a CSV, fetches the
-ECB reference rates it needs, and writes a CSV.
+ECB reference rates it needs, and writes a CSV. It files each import under `run/`, so the next
+run knows where the last one stopped and you never type a date to avoid double-booking.
 
 ---
 
@@ -39,14 +40,25 @@ USD account statement exported as CSV rather than PDF. If you grab the wrong fil
 tells you so immediately and names the columns it actually found.
 
 > Export a **wide date range** — wider than you intend to import. The converter bounds what it
-> books with `--since` / `--until`, so extra rows cost nothing, and a settlement that lands
-> late is caught rather than lost. See §4.
+> books by itself, so extra rows cost nothing, and a settlement that lands late is caught
+> rather than lost. See §4.
 
 ## 2. Convert it
 
 ```bash
-nix run github:stfl/sevdesk-import -- revolut-usd.csv -o revolut.sevdesk.csv
+nix run github:stfl/sevdesk-import -- revolut-usd.csv
 ```
+
+You do not say where the output goes. The run is filed under `run/<bank>/<last day booked>/`,
+holding the export it read as `in.csv` and the sevDesk CSV as `out.csv`:
+
+```
+run/revolut/2026-06-11/in.csv     the statement you handed it, moved here
+run/revolut/2026-06-11/out.csv    the CSV to feed the wizard
+run/revolut/latest -> 2026-06-11  where the next run picks up
+```
+
+The export is **moved**, not copied, so the same download cannot be fed in twice.
 
 ### From a clone
 
@@ -54,7 +66,7 @@ nix run github:stfl/sevdesk-import -- revolut-usd.csv -o revolut.sevdesk.csv
 directory sets itself up on entry, and there is a shorter form:
 
 ```bash
-just run wise-usd.csv wise.sevdesk.csv --since 2026-05-01
+just run wise-usd.csv
 ```
 
 `just` on its own lists every recipe. Without direnv, put one command in front:
@@ -65,28 +77,29 @@ just run wise-usd.csv wise.sevdesk.csv --since 2026-05-01
 It prints a short summary:
 
 ```
-Read 8 rows from wise-usd.csv (wise)
-Window start of statement to 2026-06-14, both inclusive
-Emitted 6 bookings to wise.sevdesk.csv
+Read 8 rows from /home/you/run/wise/2026-06-11/in.csv (wise)
+Window the start of the statement to 2026-06-11, both inclusive
+Emitted 6 bookings to /home/you/run/wise/2026-06-11/out.csv
 Dropped 2 rows: 1 funded_from_other_currency, 1 not_settled
   Example SaaS Ltd — 4.50 EUR — funded from the EUR balance, which sevDesk imports separately
   Reverted Recipient — 500.00 USD — status CANCELLED
 Moved 3565.40 USD in, 782.42 USD out, 2782.98 USD net
 Fees 15.62 USD
 Booked 3032.77 EUR in, 672.48 EUR out, 2360.29 EUR net
-Next run: --since 2026-06-15
+Next run resumes at --since 2026-06-12
 Warning: No ECB reference rate published for 2026-05-31; used the previous published business day 2026-05-29 (1.1644 USD/EUR).
 ```
 
-Read three things here: **how many bookings** you are about to import, **what got dropped** —
-each named with its own value — and the **`--since` for next time** (§4). Totals are stated in
-USD as the bank moved them, and again in EUR as they were booked.
+Read three things here: **the full path of the file** to hand the wizard, **how many bookings**
+it holds, and **what got dropped** — each named with its own value. Totals are stated in USD as
+the bank moved them, and again in EUR as they were booked. The last line is where the next run
+will pick up on its own (§4).
 
 Want the machine-readable version instead? `--output json` replaces the summary with the full
 report on stdout, and nothing else shares it, so you can pipe it straight into `jq`:
 
 ```bash
-nix run . -- wise-usd.csv -o wise.sevdesk.csv --output json | jq .counts
+nix run . -- wise-usd.csv --output json | jq .counts
 ```
 
 `--report PATH` writes that same JSON to a file while leaving the summary on screen.
@@ -132,41 +145,60 @@ attach them to the same Beleg.
 every transaction lands twice; the only remedy on its side is deleting each duplicated row by
 hand.
 
-So bound each run and chain the windows. Every run tells you the exact lower bound for the
-next one:
+You do not manage that yourself. Each run files itself under `run/<bank>/<last day booked>/`
+and the next one resumes from the day after — export a fresh statement whenever you like and
+run the same command:
 
 ```bash
-# First run — no lower bound needed, take everything up to a date you choose
-nix run . -- wise-usd.csv -o wise-may.csv --until 2026-06-14
-#   ...prints: Next run: --since 2026-06-15
-
-# Next month — start exactly where the last one stopped
-nix run . -- wise-usd.csv -o wise-june.csv --since 2026-06-15 --until 2026-07-14
+nix run . -- wise-usd.csv     # books through 2026-06-11, files it, points latest at it
+nix run . -- wise-usd.csv     # a later export: starts at 2026-06-12 on its own
 ```
 
 Both bounds are **inclusive**, and both filter on the **settlement** date — the day the money
 actually landed, not the day it was initiated. A Revolut transfer can settle seven days after
 it starts; using the settlement date is what stops it falling into the gap between two runs.
 
-Omit `--since` for no lower bound; omit `--until` and it means today.
+### The window stops at what settled, not at today
+
+The upper bound is the last day the run actually **booked**, and it stops short of anything
+that could still settle. A transfer started on the 8th and still pending holds the window at
+the 7th, even if later rows have already settled — those rows are not dropped, they are
+**deferred**, and the next run reads them once the pending one resolves.
+
+That is why the bound is never today's date: a day the tool has merely *seen* is not a day it
+has *booked*, and advancing past a transaction that lands later would skip it for good. States
+a row can never leave — `CANCELLED`, `DECLINED`, `FAILED`, `REVERTED`, `REFUNDED` — hold
+nothing back. Any other state does, including one no export has shown before.
+
+### Filing the same period twice is refused
+
+The bound is derived from your data, so re-importing a period produces the same directory name
+— and an existing directory is refused rather than overwritten:
+
+```
+run/wise/2026-06-11 already exists, so bookings up to 2026-06-11 have been
+imported already. Refusing to write over them.
+```
+
+Nothing is written and your export stays where it is. Pass `--since` to deliberately re-cover
+an earlier period, after moving the old directory aside.
 
 ## 5. Options
 
 | Option | Meaning |
 | --- | --- |
-| `-o`, `--out PATH` | where to write the sevDesk CSV (required) |
+| `--run-dir PATH` | where imports are filed and resumed from (default: `run`) |
 | `--output text\|json` | what to print: a readable summary, or the full JSON report (default: text) |
 | `--report PATH` | also write the JSON report to this file |
 | `--format german\|us` | number and date convention; the delimiter follows from it (default German) |
-| `--since YYYY-MM-DD` | earliest settlement date to convert, inclusive (default: no lower bound) |
-| `--until YYYY-MM-DD` | latest settlement date to convert, inclusive (default: today in Vienna) |
+| `--since YYYY-MM-DD` | earliest settlement date to convert, inclusive (default: the day after the last import of this bank) |
 
 ### Exit codes
 
 | Code | Meaning |
 | --- | --- |
 | `0` | clean run |
-| `2` | the CSV was written, but read the warnings first — a substituted rate, or nothing emitted |
+| `2` | the CSV was written, but read the warnings first — a substituted rate, or nothing new to book |
 | `1` | refused to write anything rather than guess a number |
 
 ## 6. The report
@@ -185,8 +217,9 @@ used and where that rate came from, and the totals.
 ]
 ```
 
-Rows excluded by your date window are counted separately, under `outside_window`, so "outside
-this period" is never confused with "not bookable".
+Rows excluded by the date window are counted separately, under `outside_window`, so "outside
+this period" is never confused with "not bookable". `window.next_since` states where the next
+run will resume, which is the day after the last one booked.
 
 Each rate records the published ECB quote it came from, so you can cite any figure to its
 publisher:
@@ -206,8 +239,11 @@ states the figure but does not make the entry.
 | --- | --- |
 | `Unrecognised statement: expected either a Wise export…` | wrong file — see the column table in §1 |
 | `transaction type 'X' has no booking rule` | your bank used a type this tool has never seen. It refuses rather than mis-book it; open an issue with the type name |
-| `No ECB reference rate for …` | the window reaches into days the ECB has not published (usually the future). Lower `--until` |
-| Exit `2`, "No rows were emitted" | the window missed your data — check `--since` / `--until` against the statement's dates |
+| `No ECB reference rate for …` | the statement reaches into days the ECB has not published (usually the future). Export again once they are |
+| Exit `2`, "Nothing new has settled" | everything in this export was booked by an earlier run. Nothing was filed and your export was left in place |
+| `already exists, so bookings up to … have been imported already` | this period is already filed under `run/`. See §4 |
+| Fewer bookings than you expected | a pending row is holding the window back; the rest are deferred to the next run, not lost. Check the summary's upper bound |
+| `may still settle, but the row carries no initiation date` | an unsettled row has no date to stop before, so the run refuses rather than risk skipping it. Re-export once it settles |
 | The wizard shows no amounts | its number format does not match `--format` — German by default |
 | Every amount imports as a credit | the wizard is ignoring the sign of `Betrag`; map that column as a signed amount rather than as a credit-only one |
 | A row you expected is missing | check `dropped` in the report; the EUR-funded leg of a split card payment is excluded on purpose (§3) |
@@ -262,4 +298,5 @@ real response. Fixtures are synthetic, written to reproduce the structural quirk
 exports without containing real data.
 
 > **Never commit real account data.** `.gitignore` denies `*.csv` everywhere and re-admits only
-> `tests/fixtures/**/*.csv`. Never weaken that rule and never `git add -f` a statement.
+> `tests/fixtures/**/*.csv`, and ignores `run/` whole — it holds real statements by definition.
+> Never weaken those rules and never `git add -f` a statement.

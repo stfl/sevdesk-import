@@ -50,6 +50,25 @@ class Drop:
 
 
 @dataclass(frozen=True)
+class Unsettled:
+    """A row that has not settled yet, kept so the window can stop short of it.
+
+    Only rows that would move *this* account's USD balance once they settle are
+    recorded, because only those can arrive later and land behind an import that has
+    already moved on. `state` is the provider's own word, unnormalised, so the rule
+    deciding which states can still settle stays in one place.
+
+    `initiated_on` is the day the provider first saw the row — the settlement date is
+    empty by definition here, so the initiation date is the only bound available. It
+    is absent only if the export omitted it, which is refused rather than guessed at.
+    """
+
+    source_ref: str
+    state: str
+    initiated_on: date | None
+
+
+@dataclass(frozen=True)
 class Statement:
     """One provider export, parsed."""
 
@@ -57,6 +76,7 @@ class Statement:
     rows_read: int
     movements: tuple[Movement, ...]
     drops: tuple[Drop, ...]
+    unsettled: tuple[Unsettled, ...] = ()
 
 
 @dataclass(frozen=True)

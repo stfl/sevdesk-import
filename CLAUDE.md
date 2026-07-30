@@ -8,8 +8,9 @@ settlement date. sevDesk only supports EUR-denominated bank accounts; this bridg
 >
 > **This repository is public and the working tree contains real bank statements.**
 >
-> `.gitignore` denies `*.csv` everywhere and re-admits only `tests/fixtures/**/*.csv`.
-> Never weaken that rule, never `git add -f` a statement, and check `git status --ignored`
+> `.gitignore` denies `*.csv` everywhere and re-admits only `tests/fixtures/**/*.csv`, and
+> ignores `run/` whole — imports filed there are real statements by definition.
+> Never weaken those rules, never `git add -f` a statement, and check `git status --ignored`
 > before any bulk `git add`. Test fixtures are synthetic — generated to reproduce the
 > structural quirks of real exports without containing real data.
 
@@ -35,9 +36,11 @@ request — CI runs the tests, types, the format check and a package build on ev
 ## Current State
 
 `sevdesk_importer/` holds the converter. Reading an export is `providers.py`, which turns
-both schemas into one `Movement` record; pricing is `conversion.py`, which splits fees into
-one booking each; `rates.py` owns the ECB series and the resolution order. `cli.py` wires them
-together and chooses the exit code.
+both schemas into one `Movement` record; pricing is `conversion.py`, which folds a fee into
+the booking it belongs to; `rates.py` owns the ECB series and the resolution order.
+`window.py` derives the import window and owns the rule that stops it short of anything
+unsettled; `runs.py` files each import under `run/` and reads back where the last one stopped.
+`cli.py` wires them together and chooses the exit code.
 
 ## Stack
 
@@ -47,7 +50,7 @@ compelling reason: a zero-dependency closure is why `nix run` starts in seconds 
 machine instead of building anything. Packaged as a flake.
 
 ```bash
-just run wise-usd.csv out.csv    # convert a statement
+just run wise-usd.csv            # convert a statement; it files itself under run/
 just check                       # tests, types, format check — what CI runs
 just                             # list every recipe
 ```
@@ -77,6 +80,15 @@ contract rather than as preferences.
   is the single line the bank statement itself shows. The fee is named in the Verwendungszweck
   and recorded per booking in the report, so it stays visible without being booked apart.
 - **One statement, one output file, one sevDesk bank account.** No cross-file matching.
+- **The import window's upper bound is derived, never chosen.** It is the last day actually
+  booked, pulled back behind the earliest row that could still settle — so a slow transaction
+  is deferred to a later run, never stepped over. States a row can never leave (`CANCELLED`,
+  `DECLINED`, `FAILED`, `REVERTED`, `REFUNDED`) hold nothing back; every other state does,
+  including an unfamiliar one. An unsettled row with no initiation date refuses the run.
+- **Each import is filed under `run/<provider>/<until>/`** as `in.csv` and `out.csv`, with a
+  `latest` symlink naming the newest. The next run resumes from the day after it. An existing
+  directory is refused, never overwritten, and the export is moved rather than copied so one
+  download cannot be booked twice. A run that books nothing touches none of it.
 
 ## Traps
 
@@ -92,6 +104,12 @@ Each of these produces plausible-looking wrong numbers rather than an error.
   delimiter follows the number format: `;` for German, `,` for US.
 - **A Revolut row can have an empty `Completed Date` and empty `Balance`** when unsettled,
   and can carry `Amount=0.00` with a nonzero `Fee`. Neither may crash or emit a zero row.
+- **An unsettled row is not just a dropped row.** It also bounds the window, so parsing must
+  keep its state and initiation date rather than flattening it into a `Drop`. Treating a
+  pending row as merely "not bookable" re-opens the silent skip the window exists to prevent.
+- **Only unsettled rows that would move *USD* may hold the window back.** A pending EUR row
+  belongs to a balance sevDesk imports separately, and stalling this account on it would defer
+  bookings for no reason.
 
 ## Testing
 

@@ -23,6 +23,10 @@ out/
 report.json
 *.report.json
 
+# The run ledger: every imported statement and the CSV it produced, filed by provider
+# and by the last day booked. Real account data by definition — never committed.
+run/
+
 # The one re-admit, last so it wins over every deny above.
 !tests/fixtures/**/*.csv
 

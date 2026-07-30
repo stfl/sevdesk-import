@@ -27,7 +27,7 @@ EXIT_WARNINGS = 2
 def build_report(
     *,
     source: str,
-    output: str,
+    output: str | None,
     statement: Statement,
     conversion: Conversion,
     excluded: Sequence[Drop],
@@ -45,8 +45,8 @@ def build_report(
         "format": convention_name,
         "window": {
             "since": window.since.isoformat() if window.since else None,
-            "until": window.until.isoformat(),
-            "next_since": window.next_since.isoformat(),
+            "until": window.until.isoformat() if window.until else None,
+            "next_since": window.next_since.isoformat() if window.next_since else None,
         },
         "counts": {
             "rows_read": statement.rows_read,
@@ -84,12 +84,18 @@ def render_summary(report: dict[str, Any]) -> str:
     counts = report["counts"]
     window = report["window"]
     totals = report["totals"]
+    opens_at = window["since"] or "the start of the statement"
     lines = [
         f"Read {counts['rows_read']} rows from {report['source']['path']} "
         f"({report['source']['provider']})",
-        f"Window {window['since'] or 'start of statement'} to {window['until']}, both inclusive",
-        f"Emitted {counts['bookings_emitted']} bookings to {report['output']}",
     ]
+    if window["until"]:
+        lines.append(f"Window {opens_at} to {window['until']}, both inclusive")
+        emitted = _plural(counts["bookings_emitted"], "booking")
+        lines.append(f"Emitted {emitted} to {report['output']}")
+    else:
+        lines.append(f"Window opens at {opens_at}; nothing has settled in it yet")
+        lines.append("Emitted nothing, so no import was filed and the export was left in place")
     if report["dropped"]:
         reasons = Counter(drop["reason"] for drop in report["dropped"])
         detail = ", ".join(f"{count} {reason}" for reason, count in sorted(reasons.items()))
@@ -106,13 +112,18 @@ def render_summary(report: dict[str, Any]) -> str:
         f"Booked {totals['eur_credited']} EUR in, {totals['eur_debited']} EUR out, "
         f"{totals['eur_net']} EUR net"
     )
-    lines.append(f"Next run: --since {window['next_since']}")
+    if window["next_since"]:
+        lines.append(f"Next run resumes at --since {window['next_since']}")
     lines += [f"Warning: {warning}" for warning in report["warnings"]]
     return "\n".join(lines)
 
 
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
 def _rows(count: int) -> str:
-    return f"{count} row" if count == 1 else f"{count} rows"
+    return _plural(count, "row")
 
 
 def _dropped_line(drop: dict[str, str]) -> str:

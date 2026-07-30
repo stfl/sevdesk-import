@@ -5,13 +5,14 @@
 default:
     @just --list
 
-# Convert a USD statement into a sevDesk CSV. Extra flags pass straight through:
-#   just run wise-usd.csv wise.sevdesk.csv --since 2026-05-01
-run statement output *options:
+# Convert a USD statement into a sevDesk CSV, filed under run/. Extra flags pass
+# straight through:
+#   just run wise-usd.csv --since 2026-05-01
+run statement *options:
     #!/usr/bin/env bash
     set -uo pipefail
     status=0
-    python3 -m sevdesk_importer {{ statement }} -o {{ output }} {{ options }} || status=$?
+    python3 -m sevdesk_importer {{ statement }} {{ options }} || status=$?
     # Exit 2 means the CSV was written and the warnings above are worth reading —
     # a rate substituted from an earlier business day, say. Reporting that as a
     # failed recipe would cry wolf on most runs. Only exit 1, a refusal to write
